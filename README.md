@@ -147,7 +147,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 仓库不含签名密钥，debug 包使用本机生成的调试签名。构建 release 包须自备 keystore，并新增 release 的 `signingConfig` 挂到 release buildType。现有 `android/app/build.gradle.kts` 的 `signingConfigs` 只有 `debug` 一项。
 
-不在本地搭建 Android 工具链时，可使用 CI 产物：推送到 `main`、提交拉取请求或手动触发工作流时都会构建 debug APK，在 Actions 页面下载 `miaoledger-debug-apk` 安装。
+不在本地搭建 Android 工具链时，可取 [Releases](https://github.com/doctormdkzrp/MiaoLedger/releases) 页面附带的 debug APK。该包对应某个具体版本。跟随 `main` 最新提交的构建产物在 Actions 页面的 `miaoledger-debug-apk` 附件中。
 
 ## 配置说明
 
