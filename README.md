@@ -2,6 +2,10 @@
 
 一个自部署的家庭记账系统。
 
+[![CI][ci-badge]][ci-link]
+[![Release][release-badge]][release-link]
+[![License][license-badge]][license-link]
+
 <p align="center">
   <img src="docs/images/logo.svg" width="96" alt="小喵记账">
 </p>
@@ -235,7 +239,7 @@ docker-compose.yml
 
 ## 参与开发
 
-见 [CONTRIBUTING.md](CONTRIBUTING.md)。缺陷与功能建议通过 Issue 模板提交，安全问题的报告方式见 [SECURITY.md](SECURITY.md)。
+见 [CONTRIBUTING.md](CONTRIBUTING.md)。缺陷与功能建议通过 Issue 模板提交，安全问题的报告方式见 [SECURITY.md](SECURITY.md)，社区行为约定见 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
 
 ## 版本变更
 
@@ -246,3 +250,10 @@ docker-compose.yml
 本项目采用 [MIT](LICENSE) 协议。
 
 第三方依赖多为 MIT、Apache-2.0、BSD-3-Clause 等宽松协议，均允许商用、修改与闭源分发，须保留版权声明。`psycopg`（PostgreSQL 驱动）为 LGPL-3.0，以依赖形式调用，不影响本项目自身的协议选择。
+
+[ci-badge]: https://github.com/doctormdkzrp/MiaoLedger/actions/workflows/ci.yml/badge.svg
+[ci-link]: https://github.com/doctormdkzrp/MiaoLedger/actions/workflows/ci.yml
+[release-badge]: https://img.shields.io/github/v/release/doctormdkzrp/MiaoLedger
+[release-link]: https://github.com/doctormdkzrp/MiaoLedger/releases
+[license-badge]: https://img.shields.io/badge/license-MIT-blue.svg
+[license-link]: LICENSE
