@@ -1,0 +1,52 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+*.db
+*.db-journal
+.pytest_cache/
+.env
+!.env.example
+
+# ---- Java / Android / Gradle ----
+.gradle/
+.kotlin/
+build/
+local.properties
+*.apk
+*.aab
+*.keystore
+*.jks
+captures/
+.externalNativeBuild/
+.cxx/
+
+# ---- Node / Vue ----
+node_modules/
+dist/
+.pnpm-store/
+*.tsbuildinfo
+.env.local
+.env.*.local
+
+# ---- 运行期数据 ----
+/data/
+/backups/
+
+# ---- 编辑器 / 系统 ----
+.idea/
+.vscode/
+*.iml
+*.log
+.DS_Store
+Thumbs.db
+
+# ---- 协作/私有 ----
+.coord/
+
+# ---- 截图（本地存放，不进仓库）----
+# README 用到的界面截图放在本机 docs/images/ 下但不提交，避免把演示数据带进公开历史。
+docs/images/screenshot-*.png
+docs/images/screenshot-*.jpg

@@ -1,0 +1,185 @@
+:root {
+  --miao-primary: #5aa9f0;
+  --miao-primary-soft: #f1f8fe;
+  --miao-bg: #f2f5f9;
+  --miao-side-bg: #1b2430;
+  --miao-side-bg-soft: #243040;
+  --miao-side-text: #c3ccd8;
+  --miao-radius: 12px;
+  --miao-text: #2b3440;
+  --miao-text-sub: #5c6672;
+
+  /* Element Plus 主题色对齐品牌淡蓝（与手机端 MiaoBlue 一致） */
+  --el-color-primary: #5aa9f0;
+  --el-color-primary-light-3: #84bef4;
+  --el-color-primary-light-5: #a9d4f7;
+  --el-color-primary-light-7: #cbe5fb;
+  --el-color-primary-light-8: #d9ecfc;
+  --el-color-primary-light-9: #f1f8fe;
+  --el-color-primary-dark-2: #2c7bc4;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family:
+    "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial,
+    "Noto Sans SC", sans-serif;
+  background: var(--miao-bg);
+  color: var(--miao-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
+
+/* ---------- 通用页面骨架 ---------- */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.page-card {
+  background: #fff;
+  border-radius: var(--miao-radius);
+  padding: 20px 22px;
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.04),
+    0 10px 28px -16px rgba(16, 24, 40, 0.18);
+}
+
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.page-head h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.page-head .sub {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--miao-text-sub);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.toolbar .spacer {
+  flex: 1;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px;
+}
+
+.stat {
+  border-radius: var(--miao-radius);
+  padding: 16px 18px;
+  background: #fff;
+  border: 1px solid #eef0f3;
+}
+
+.stat .label {
+  font-size: 13px;
+  color: var(--miao-text-sub);
+}
+
+.stat .value {
+  margin-top: 8px;
+  font-size: 24px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat.out .value {
+  color: #d64545;
+}
+
+.stat.in .value {
+  color: #2f9e44;
+}
+
+.stat.left .value {
+  color: var(--el-color-primary);
+}
+
+.money {
+  font-variant-numeric: tabular-nums;
+}
+
+.money-out {
+  color: #d64545;
+}
+
+.money-in {
+  color: #2f9e44;
+}
+
+.muted {
+  color: var(--miao-text-sub);
+  font-size: 13px;
+}
+
+.grow {
+  flex: 1;
+}
+
+.empty-tip {
+  padding: 28px 0;
+  text-align: center;
+  color: var(--miao-text-sub);
+  font-size: 13px;
+}
+
+/* ---------- 路由切换动画 ---------- */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.16s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* ---------- 滚动条 ---------- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(31, 36, 48, 0.18);
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(31, 36, 48, 0.3);
+}

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 启动主题：状态栏透明交给 enableEdgeToEdge，避免启动瞬间闪白 -->
+    <style name="Theme.Miao" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#5AA9F0</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">#FFFFFF</item>
+        <item name="android:windowBackground">#F2F5F9</item>
+    </style>
+</resources>

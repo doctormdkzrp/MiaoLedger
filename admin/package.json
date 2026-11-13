@@ -1,0 +1,33 @@
+{
+  "name": "miao-ledger-admin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "小喵记账 管理台（Web 后台）",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "rimraf dist && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit --skipLibCheck"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.13.0"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "axios": "^1.12.2",
+    "dayjs": "^1.11.18",
+    "element-plus": "^2.11.5",
+    "pinia": "^3.0.3",
+    "vue": "^3.5.22",
+    "vue-router": "^4.6.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.23",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12",
+    "vue-tsc": "^3.1.2"
+  }
+}

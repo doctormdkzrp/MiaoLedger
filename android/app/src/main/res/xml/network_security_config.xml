@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  服务器地址由使用者自己在 App 里填写（局域网 IP 或内网穿透地址都行），
+  因此没法在这里预置固定的域名白名单，只能整体放行明文 HTTP。
+  如果你把自己的服务端配好了 HTTPS，建议把下面的 cleartextTrafficPermitted 改成 false。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

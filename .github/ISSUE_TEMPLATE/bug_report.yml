@@ -1,0 +1,61 @@
+name: 缺陷报告
+description: 报告可复现的缺陷
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请确认使用的是最新版本，并搜索过已有 Issue。
+        安全漏洞不要在此提交，请按 SECURITY.md 的方式私下报告。
+  - type: dropdown
+    id: component
+    attributes:
+      label: 组件
+      description: 出现问题的部分
+      options:
+        - Android 客户端
+        - 服务端
+        - 管理台
+        - 部署
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 服务端 `GET /health` 返回的 version 字段；Android 见「我的」页面底部。
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 按顺序列出操作，必要时附截图。
+      placeholder: |
+        1. 打开「AI」页面
+        2. 输入「午饭 25 块微信」
+        3. 查看解析结果
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志
+      description: 粘贴服务端或客户端日志片段。提交前删除 Key、token、真实服务器地址与内网 IP。
+      render: shell
+    validations:
+      required: false

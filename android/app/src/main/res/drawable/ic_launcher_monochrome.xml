@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  小喵记账的主题图标（Android 13+ 单色层）：系统会把这一层整体染成一个颜色，
+  所以这里只留剪影，线条比彩色版更粗一点，缩到桌面图标大小还能看清。
+  注意：单色层里所有描边 / 填充必须是纯色（这里用黑色，系统会替换成主题色）。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 猫头 -->
+    <path
+        android:pathData="M39.75,43 a14.25,12.75 0 1 0 28.5,0 a14.25,12.75 0 1 0 -28.5,0"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 左耳 -->
+    <path
+        android:pathData="M44,34.5 L41.5,25 L51.5,31"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 右耳 -->
+    <path
+        android:pathData="M64,34.5 L66.5,25 L56.5,31"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 眼睛 -->
+    <path
+        android:pathData="M49,41 m-3,0 a3,3 0 1 0 6,0 a3,3 0 1 0 -6,0"
+        android:fillColor="#FF000000" />
+    <path
+        android:pathData="M59,41 m-3,0 a3,3 0 1 0 6,0 a3,3 0 1 0 -6,0"
+        android:fillColor="#FF000000" />
+
+    <!-- 嘴：小 w -->
+    <path
+        android:pathData="M51,47.5 Q54,51 54,47.5 Q54,51 57,47.5"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 胡须：左 -->
+    <path
+        android:pathData="M37,40.5 L29.5,38.5"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M37,45.5 L29.5,46.5"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round" />
+
+    <!-- 胡须：右 -->
+    <path
+        android:pathData="M71,40.5 L78.5,38.5"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M71,45.5 L78.5,46.5"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round" />
+
+    <!-- 两只前爪，从下巴伸下去压住铜钱 -->
+    <path
+        android:pathData="M47.6,55 L46.4,62"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M60.4,55 L61.6,62"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="5"
+        android:strokeLineCap="round" />
+
+    <!-- 铜钱 -->
+    <path
+        android:pathData="M43,71 a11,11 0 1 0 22,0 a11,11 0 1 0 -22,0"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 铜钱中间的「¥」 -->
+    <path
+        android:pathData="M50.4,66.6 L54,69.8 L57.6,66.6"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M54,69.8 L54,77.4"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.4"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M50.4,71.4 L57.6,71.4"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M50.4,74.6 L57.6,74.6"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round" />
+</vector>
