@@ -20,7 +20,11 @@ class User(Base):
 
 
 class Device(Base):
-    """一台手机一个 token，退出登录即失效。"""
+    """一台手机一个 token，退出登录即失效。
+
+    公网部署后多一层「新设备要批准」：客户端第一次登录会带一个自己生成的
+    X-Device-Id，没见过的就先记成 pending，等管理员在后台批了才发 token。
+    """
 
     __tablename__ = "devices"
 
@@ -30,6 +34,13 @@ class Device(Base):
     token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     last_seen: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # 客户端自己生成的设备指纹（UUIDv4）；老客户端不带头，这一列留空。
+    # 老库没有下面这几列时由 db.ensure_schema 补上。
+    device_uuid: Mapped[str] = mapped_column(String(64), default="", index=True)
+    device_name: Mapped[str] = mapped_column(String(64), default="")
+    # pending / approved / revoked
+    status: Mapped[str] = mapped_column(String(16), default="approved", server_default="approved")
+    first_seen: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Book(Base):

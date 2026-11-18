@@ -40,7 +40,22 @@ def _sqlite_path(url: str) -> str | None:
 # SQLite / PostgreSQL 语法一致（ADD COLUMN + NOT NULL DEFAULT），可反复执行。
 EXTRA_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "users": [("role", "VARCHAR(16) NOT NULL DEFAULT 'user'")],
+    # 新设备批准：老库的 devices 没有这几列，补上。status 的 DDL 默认值特意写成
+    # approved —— 老设备（本来就在用）加列时直接就是 approved，不会把自己锁在外面；
+    # 只有代码里新建的「没见过的设备」才显式写成 pending。
+    "devices": [
+        ("device_uuid", "VARCHAR(64) NOT NULL DEFAULT ''"),
+        ("device_name", "VARCHAR(64) NOT NULL DEFAULT ''"),
+        ("status", "VARCHAR(16) NOT NULL DEFAULT 'approved'"),
+        ("first_seen", "TIMESTAMP"),
+    ],
 }
+
+# 兜底：万一某条老记录的 status 是空的（手工改过库、或别的方言补列时没带默认值），
+# 一律按 approved 处理，避免升级后自己的手机进不来。
+BACKFILL_SQL: list[str] = [
+    "UPDATE devices SET status = 'approved' WHERE status IS NULL OR status = ''",
+]
 
 
 def ensure_schema(bind: Engine | None = None) -> list[str]:
@@ -63,6 +78,28 @@ def ensure_schema(bind: Engine | None = None) -> list[str]:
     return applied
 
 
+def backfill_legacy_devices(bind: Engine | None = None) -> list[str]:
+    """把没有状态的设备（升级前就存在的老设备）一律置为 approved。
+
+    这条必须跟 ensure_schema 一起跑：老手机本来就在用，升级后不能因为新加的
+    「新设备要批准」规则被踢出去。
+    """
+    bind = bind or engine
+    applied: list[str] = []
+    insp = inspect(bind)
+    if "devices" not in set(insp.get_table_names()):
+        return applied
+    existing = {c["name"] for c in insp.get_columns("devices")}
+    if "status" not in existing:
+        return applied
+    for stmt in BACKFILL_SQL:
+        with bind.begin() as conn:
+            res = conn.execute(text(stmt))
+        if (res.rowcount or 0) > 0:
+            applied.append(stmt)
+    return applied
+
+
 def init_db() -> None:
     from . import models  # noqa: F401  确保模型注册
 
@@ -72,3 +109,4 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     ensure_schema(engine)
+    backfill_legacy_devices(engine)

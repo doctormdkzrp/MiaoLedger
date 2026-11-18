@@ -223,7 +223,16 @@ private fun LoginPage(
                 }
                 onDone()
             } catch (e: Exception) {
-                err = (e as? ApiError)?.message ?: "没登进去，再试一次。"
+                val apiErr = e as? ApiError
+                err = when {
+                    // 设备没批 / 被停用：只是这台手机的事，别自动重试，也别清掉账号让用户重填。
+                    // 停在登录页，管理员批完他自己再点一次「登录」就够了。
+                    apiErr?.devicePending == true ->
+                        "这台手机还没被批准。让管服务器的人在后台点一下，批完再点「登录」。"
+                    apiErr?.deviceRevoked == true ->
+                        "这台手机已经被停用了。要重新用，得让管服务器的人在后台再批一次。"
+                    else -> apiErr?.message ?: "没登进去，再试一次。"
+                }
             } finally {
                 busy = false
             }

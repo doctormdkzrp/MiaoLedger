@@ -87,6 +87,20 @@ class Prefs(ctx: Context) {
         get() = sp.getString("restoreCursor", "") ?: ""
         set(v) = sp.edit().putString("restoreCursor", v).apply()
 
+    /**
+     * 这台手机的设备指纹（UUIDv4）。服务端靠它认「这台机器批过没批过」，
+     * 所以只在第一次用时生成一次，之后一直用同一个 —— 每次启动重新生成的话，
+     * 就等于每开一次 App 都变成一台新设备，永远卡在待批准。
+     */
+    val deviceId: String
+        get() {
+            val saved = sp.getString("deviceId", "") ?: ""
+            if (saved.isNotEmpty()) return saved
+            val fresh = java.util.UUID.randomUUID().toString()
+            sp.edit().putString("deviceId", fresh).apply()
+            return fresh
+        }
+
     var books: List<Book>
         get() = gson.fromJson(sp.getString("books", "[]"), object : TypeToken<List<Book>>() {}.type) ?: emptyList()
         set(v) = sp.edit().putString("books", gson.toJson(v)).apply()

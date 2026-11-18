@@ -11,14 +11,28 @@ from __future__ import annotations
 import re
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .auth import current_user, hash_pin, invite_code, issue_token, revoke_token, verify_pin
+from .auth import (
+    LOGIN_LOCK,
+    LOCKED_HINT,
+    DeviceBlocked,
+    current_user,
+    device_for_login,
+    drop_device_tokens,
+    hash_pin,
+    invite_code,
+    issue_token,
+    revoke_token,
+    rotate_token,
+    verify_pin,
+)
 from .common import seed_user
 from .db import get_db
-from .models import Device, User
+from .models import User
 from .schemas import ChangePinIn, LoginIn, RegisterIn, TokenOut
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -49,7 +63,12 @@ def check_username(username: str = "", db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/register", response_model=TokenOut)
-def register(body: RegisterIn, db: Session = Depends(get_db)) -> TokenOut:
+def register(
+    body: RegisterIn,
+    x_device_id: str = Header(default="", alias="X-Device-Id"),
+    x_device_name: str = Header(default="", alias="X-Device-Name"),
+    db: Session = Depends(get_db),
+) -> TokenOut:
     expected = invite_code()
     if expected and (body.invite_code or "").strip() != expected:
         raise HTTPException(status_code=403, detail=CODE_HINT)
@@ -76,18 +95,57 @@ def register(body: RegisterIn, db: Session = Depends(get_db)) -> TokenOut:
     db.refresh(user)
 
     seed_user(db, user)
-    token = issue_token(db, user, body.device_name or "android")
+    # 注册本身已经过了邀请码，这台设备直接 approved，不用再等管理员批一次。
+    token = issue_token(
+        db,
+        user,
+        x_device_name or body.device_name or "android",
+        device_uuid=x_device_id,
+    )
     return TokenOut(
         token=token, username=user.username, display_name=user.display_name, role=user.role or "user"
     )
 
 
 @router.post("/login", response_model=TokenOut)
-def login(body: LoginIn, db: Session = Depends(get_db)) -> TokenOut:
-    user = db.scalar(select(User).where(User.username == body.username.strip()))
+def login(
+    body: LoginIn,
+    x_device_id: str = Header(default="", alias="X-Device-Id"),
+    x_device_name: str = Header(default="", alias="X-Device-Name"),
+    db: Session = Depends(get_db),
+):
+    """登录：先看这个账号是不是被锁了，再验密码，最后认设备。
+
+    顺序是故意的：
+    - 锁在最前，锁着的时候连密码都不验（不然锁定就没意义了）；
+    - 密码错才计数，设备 pending/revoked 不算密码失败（那不是撞密码）；
+    - 设备在密码后才判，是怕密码错的人也能探出「这台手机批没批」。
+    """
+    username = body.username.strip()
+    wait = LOGIN_LOCK.wait_seconds(username)
+    if wait > 0:
+        raise HTTPException(
+            status_code=429,
+            detail=LOCKED_HINT,
+            headers={"Retry-After": str(wait)},
+        )
+
+    user = db.scalar(select(User).where(User.username == username))
     if user is None or not verify_pin(body.pin, user.pin_hash):
+        LOGIN_LOCK.fail(username)
         raise HTTPException(status_code=401, detail="账号或密码不对")
-    token = issue_token(db, user, body.device_name or "android")
+
+    try:
+        dev = device_for_login(db, user, x_device_id, x_device_name or body.device_name or "android")
+    except DeviceBlocked as blocked:
+        # 403 + 顶层 code：客户端靠它区分「邀请码不对」和「设备没批」。
+        return JSONResponse(
+            status_code=403,
+            content={"detail": blocked.detail, "code": blocked.code},
+        )
+
+    LOGIN_LOCK.ok(username)
+    token = rotate_token(db, dev)
     return TokenOut(
         token=token, username=user.username, display_name=user.display_name, role=user.role or "user"
     )
@@ -102,7 +160,8 @@ def change_pin(
 ) -> dict:
     """改 6 位数字密码。
 
-    改完把其它设备的 token 全删掉（换手机/丢手机时能一脚踢开），当前这台保持登录。
+    改完把其它设备的凭据全作废（换手机/丢手机时能一脚踢开），当前这台保持登录；
+    设备记录本身留着，否则那几台手机下次登录会被自己的新规则当成新设备卡在待批准。
     """
     if not verify_pin(body.old_pin or "", user.pin_hash):
         raise HTTPException(status_code=401, detail=OLD_PIN_HINT)
@@ -113,11 +172,10 @@ def change_pin(
 
     token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
     user.pin_hash = hash_pin(body.new_pin)
-    others = db.scalars(select(Device).where(Device.user_id == user.id, Device.token != token)).all()
-    for dev in others:
-        db.delete(dev)
+    # 只作废别的凭据，设备记录留着：记录一删，那几台手机下次登录就会被当成新设备卡在待批准。
+    others = drop_device_tokens(db, user.id, keep_token=token)
     db.commit()
-    return {"ok": True, "revoked_devices": len(others)}
+    return {"ok": True, "revoked_devices": others}
 
 
 @router.post("/logout")

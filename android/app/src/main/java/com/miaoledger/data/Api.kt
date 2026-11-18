@@ -15,23 +15,36 @@ import java.util.concurrent.TimeUnit
 /**
  * 出错时抛这个，带「人话」提示。code=0 表示根本没连上（网络/地址不对），
  * code=404 表示服务端还没升级到会这个功能的那一版。
+ *
+ * bizCode 是服务端报错体里的 code 字段（例如 DEVICE_PENDING / DEVICE_REVOKED）。
+ * 光看 HTTP 状态码分不出来是「邀请码不对」还是「这台手机没批」，所以要把 body 里的
+ * code 也带出来，文案才能对应上。
  */
 class ApiError(
     val code: Int,
     val detail: String? = null,
     cause: Throwable? = null,
-) : Exception(humanMessage(code, detail), cause) {
+    val bizCode: String? = null,
+) : Exception(humanMessage(code, detail, bizCode), cause) {
     val offline: Boolean get() = code == 0
     val notDeployed: Boolean get() = code == 404
+    val devicePending: Boolean get() = bizCode == "DEVICE_PENDING"
+    val deviceRevoked: Boolean get() = bizCode == "DEVICE_REVOKED"
 }
 
 /** 把服务端的报错翻译成普通用户能看懂的话。 */
-fun humanMessage(code: Int, detail: String? = null): String {
+fun humanMessage(code: Int, detail: String? = null, bizCode: String? = null): String {
     val d = detail?.trim()?.takeIf { it.isNotEmpty() }
     return when (code) {
         0 -> "连不上服务器。检查一下手机网络，或者服务器地址填得对不对，然后再试一次。"
         401 -> "账号或密码不对。密码是数字，输错了就再输一遍。"
-        403 -> "邀请码不对。向已经在用这个 App 的人要一下邀请码。"
+        // 403 有两种意思，必须按服务端给的 code 分开说，否则「设备没批」会被说成「邀请码不对」
+        403 -> when (bizCode) {
+            "DEVICE_PENDING" -> "这台手机还没被批准，让管服务器的人在后台点一下。"
+            "DEVICE_REVOKED" -> "这台手机已经被停用了。要重新用，让管服务器的人在后台批一下。"
+            else -> "邀请码不对。向已经在用这个 App 的人要一下邀请码。"
+        }
+        429 -> d ?: "操作太频繁了，过一会儿再试。"
         404 -> "服务器还没升级到这一版，这个功能暂时用不了。等它更新完再试。"
         409 -> "这个账号名已经有人用了，换一个再试。"
         422 -> d ?: "填的内容格式不太对，检查一下再试。"
@@ -86,20 +99,37 @@ class Api(private val prefs: Prefs) {
     private fun req(path: String, body: String? = null, method: String = "GET", auth: Boolean = true): Request {
         val b = Request.Builder().url(url(path))
         if (auth && prefs.token.isNotEmpty()) b.header("Authorization", "Bearer ${prefs.token}")
+        // 每台设备带一个自己生成的指纹，服务端靠它判断这台机器批没批（见 auth.device_for_login）
+        b.header("X-Device-Id", prefs.deviceId)
+        b.header("X-Device-Name", deviceName())
         if (body != null) b.method(method, body.toRequestBody(json)) else b.method(method, null)
         return b.build()
     }
 
-    /** 服务端报错体是 {"detail": "中文"}；也兼容 detail 是数组/对象的情况。 */
-    private fun detailOf(text: String): String? = runCatching {
-        val o = gson.fromJson(text, JsonObject::class.java)
-        val d = o.get("detail") ?: return@runCatching null
-        when {
+    /** 设备名只用来在管理台里认出「哪个是我妈的手机」，取手机型号就够。 */
+    private fun deviceName(): String =
+        (android.os.Build.MODEL ?: "").trim().ifEmpty { "android" }.take(64)
+
+    /** 服务端报错体是 {"detail": "中文", "code": "DEVICE_PENDING"}；detail 也可能是数组/对象。 */
+    private fun jsonOf(text: String): JsonObject? = runCatching {
+        gson.fromJson(text, JsonObject::class.java)
+    }.getOrNull()
+
+    private fun detailOf(text: String): String? {
+        val od = jsonOf(text) ?: return null
+        val d = od.get("detail") ?: return null
+        return when {
             d.isJsonPrimitive -> d.asString
             d.isJsonArray -> d.asJsonArray.joinToString("；") { it.toString().trim('"') }
             else -> null
         }
-    }.getOrNull()
+    }
+
+    private fun bizCodeOf(text: String): String? = jsonOf(text)
+        ?.get("code")
+        ?.takeIf { it.isJsonPrimitive }
+        ?.asString
+        ?.takeIf { it.isNotBlank() }
 
     private fun exec(r: Request): String {
         val res = try {
@@ -109,7 +139,7 @@ class Api(private val prefs: Prefs) {
         }
         res.use {
             val text = it.body?.string().orEmpty()
-            if (!it.isSuccessful) throw ApiError(it.code, detailOf(text))
+            if (!it.isSuccessful) throw ApiError(it.code, detailOf(text), null, bizCodeOf(text))
             return text
         }
     }

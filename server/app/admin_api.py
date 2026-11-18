@@ -17,7 +17,16 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .ai_api import _profile_payload, save_profile_hints
-from .auth import ROLE_ADMIN, ROLE_USER, hash_pin, require_admin, revoke_all_tokens
+from .auth import (
+    DEVICE_APPROVED,
+    DEVICE_PENDING,
+    ROLE_ADMIN,
+    ROLE_USER,
+    hash_pin,
+    require_admin,
+    revoke_all_tokens,
+    revoke_device,
+)
 from .common import (
     check_amount,
     check_kind,
@@ -29,7 +38,7 @@ from .common import (
     txn_payload,
 )
 from .db import get_db
-from .models import Book, Txn, User
+from .models import Book, Device, Txn, User
 from .schemas import AdminTxnIn, AdminUserIn, AdminUserPatchIn, AiProfileIn, TxnOut, TxnPatchIn
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
@@ -342,4 +351,90 @@ async def user_import_csv(
 ) -> dict:
     user = _target(db, user_id)
     raw = await file.read()
+
     return import_csv(db, user, raw)
+
+
+# ---------------------------------------------------------------- 设备（新设备批准 / 停用）
+def _device_payload(dev: Device) -> dict:
+    status = dev.status or DEVICE_APPROVED
+    return {
+        "id": dev.id,
+        "device_id": dev.device_uuid or "",
+        "name": dev.device_name or dev.name or "",
+        "status": status,
+        "approved": status == DEVICE_APPROVED,
+        "first_seen": _iso(dev.first_seen or dev.created_at),
+        "last_seen": _iso(dev.last_seen or dev.created_at),
+        "token_alive": not (dev.token or "").startswith(("pending-", "kicked-", "revoked-")),
+    }
+
+
+def _iso(value: datetime | None) -> str | None:
+    return value.isoformat() if value else None
+
+
+def _device_of(db: Session, user_id: int, device_id: int) -> Device:
+    dev = db.scalar(select(Device).where(Device.id == device_id, Device.user_id == user_id))
+    if dev is None:
+        raise HTTPException(status_code=404, detail="没有这台设备")
+    return dev
+
+
+@router.get("/users/{user_id}/devices")
+def user_devices(
+    user_id: int,
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """某个人登录过的设备清单，新设备排前面（管理员一进来就看到待批的）。
+
+    status：pending（还没批）/ approved（能用）/ revoked（被停用）。
+    老客户端不带设备指纹，那些记录的 device_id 是空串。
+    """
+    user = _target(db, user_id)
+    rows = db.scalars(
+        select(Device).where(Device.user_id == user.id).order_by(Device.id.desc())
+    ).all()
+    items = [_device_payload(d) for d in rows]
+    items.sort(key=lambda d: (d["status"] != DEVICE_PENDING, d["id"]))
+    pending = len([d for d in items if d["status"] == DEVICE_PENDING])
+    return {"total": len(items), "pending": pending, "items": items}
+
+
+@router.post("/users/{user_id}/devices/{device_id}/approve")
+def approve_user_device(
+    user_id: int,
+    device_id: int,
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """批准一台设备：状态置 approved，设备下次登录就能拿到 token。"""
+    user = _target(db, user_id)
+    dev = _device_of(db, user.id, device_id)
+    dev.status = DEVICE_APPROVED
+    if dev.first_seen is None:
+        dev.first_seen = datetime.now()
+    db.commit()
+    db.refresh(dev)
+    return {"ok": True, "device": _device_payload(dev)}
+
+
+@router.post("/users/{user_id}/devices/{device_id}/revoke")
+def revoke_user_device(
+    user_id: int,
+    device_id: int,
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """停用一台设备：状态置 revoked，同时把它的 token 作废（下一次请求就 401）。
+
+    设备记录留着不删 —— 记录一删，那台手机下次登录就会被当成"没批过的新设备"，
+    反而要再批一次；留着 revoked 状态才能一直挡着。
+    """
+    user = _target(db, user_id)
+    dev = _device_of(db, user.id, device_id)
+    revoke_device(db, dev)
+    db.refresh(dev)
+    return {"ok": True, "device": _device_payload(dev)}
+
