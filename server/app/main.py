@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -13,7 +14,7 @@ from datetime import datetime
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from .admin_api import router as admin_router
@@ -217,24 +218,85 @@ def push_txns(body: PushIn, user: User = Depends(current_user), db: Session = De
     return PushOut(accepted=len(body.txns), created=created, updated=updated, server_time=datetime.now())
 
 
-@app.get("/api/v1/txns", response_model=list[TxnOut])
+def _cursor_time(db: Session, expr):
+    """把 updated_at 统一裁到「秒」再比。
+
+    SQLite 的 updated_at 是文本：建表默认值（CURRENT_TIMESTAMP）写的是
+    `2026-11-18 11:46:04`，而代码里赋值 datetime.now() 写的是
+    `2026-11-18 11:46:04.123456`。两种形态直接比会漏（同一行跟自己的游标判不相等），
+    所以两边都裁到秒；秒内并列的由 client_uuid 定先后，翻页仍然不重不漏。
+    """
+    if db.get_bind().dialect.name == "sqlite":
+        return func.strftime("%Y-%m-%d %H:%M:%S", expr)
+    return func.to_char(func.date_trunc("second", expr), "YYYY-MM-DD HH24:MI:SS")
+
+
+def _encode_cursor(row: Txn) -> str:
+    """把「updated_at（秒）+ client_uuid」编成一个不透明游标，客户端只管原样带回来。"""
+    ts = row.updated_at or datetime.min
+    raw = f"{ts.strftime('%Y-%m-%d %H:%M:%S')}|{row.client_uuid}".encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _decode_cursor(cursor: str) -> tuple[str, str]:
+    """游标解不开就是客户端乱传，直接 422，不猜。"""
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        raw = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+        ts_text, _, uuid = raw.partition("|")
+        datetime.strptime(ts_text, "%Y-%m-%d %H:%M:%S")
+        return ts_text, uuid
+    except Exception:
+        raise HTTPException(status_code=422, detail="cursor 不对，从头拉一遍")
+
+
+@app.get("/api/v1/txns")
 def pull_txns(
     since: datetime | None = None,
     book_id: int | None = None,
     include_deleted: bool = True,
     limit: int = Query(default=500, le=2000),
+    full: int = 0,
+    cursor: str | None = None,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
-) -> list[TxnOut]:
-    q = select(Txn).where(Txn.user_id == user.id)
+):
+    """拉账单。
+
+    老客户端（不带 full）还是拿到裸列表，语义跟以前一模一样；
+    `full=1` 走整库分页拉取，返回 {"items":[...],"next_cursor":"...","total":N}，
+    软删的笔也会带 deleted=true 一起回来，客户端据此删本地行。
+    """
+    if full and limit > 1000:
+        raise HTTPException(status_code=422, detail="单次最多拉 1000 笔")
+
+    ts_key = _cursor_time(db, Txn.updated_at)
+    conds = [Txn.user_id == user.id]
     if since is not None:
-        q = q.where(Txn.updated_at >= since)
+        conds.append(Txn.updated_at >= since)
     if book_id is not None:
-        q = q.where(Txn.book_id == book_id)
+        conds.append(Txn.book_id == book_id)
     if not include_deleted:
-        q = q.where(Txn.deleted.is_(False))
-    rows = db.scalars(q.order_by(Txn.updated_at.asc()).limit(limit)).all()
-    return [TxnOut(**txn_payload(r)) for r in rows]
+        conds.append(Txn.deleted.is_(False))
+
+    # total 是「这次要拉的总笔数」，翻页时每页都保持同一个值，
+    # 客户端才能显示「正在恢复 120/500」。
+    total = db.scalar(select(func.count()).select_from(Txn).where(*conds))
+
+    # 翻页锚点用「秒级 updated_at + client_uuid」复合：同一秒内被改的几笔也有确定的先后。
+    if full and cursor:
+        c_ts, c_uuid = _decode_cursor(cursor)
+        conds.append(or_(ts_key > c_ts, (ts_key == c_ts) & (Txn.client_uuid > c_uuid)))
+
+    q = select(Txn).where(*conds)
+    rows = db.scalars(q.order_by(ts_key.asc(), Txn.client_uuid.asc()).limit(limit)).all()
+
+    if not full:
+        return [TxnOut(**txn_payload(r)) for r in rows]
+
+    items = [TxnOut(**txn_payload(r)) for r in rows]
+    next_cursor = _encode_cursor(rows[-1]) if len(rows) == limit and rows else None
+    return {"items": items, "next_cursor": next_cursor, "total": total}
 
 
 @app.patch("/api/v1/txns/{client_uuid}", response_model=TxnOut)

@@ -77,6 +77,16 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("pendingWipe", false)
         set(v) = sp.edit().putBoolean("pendingWipe", v).apply()
 
+    /** 登录时本地一条账都没有 → 记下来，把服务器那份整库拉回来（拉完清掉）。 */
+    var restorePending: Boolean
+        get() = sp.getBoolean("restorePending", false)
+        set(v) = sp.edit().putBoolean("restorePending", v).apply()
+
+    /** 整库拉取拉到哪了（服务端给的不透明游标）。中途断了，下次从这儿接着拉。 */
+    var restoreCursor: String
+        get() = sp.getString("restoreCursor", "") ?: ""
+        set(v) = sp.edit().putString("restoreCursor", v).apply()
+
     var books: List<Book>
         get() = gson.fromJson(sp.getString("books", "[]"), object : TypeToken<List<Book>>() {}.type) ?: emptyList()
         set(v) = sp.edit().putString("books", gson.toJson(v)).apply()
@@ -156,6 +166,35 @@ class LocalDb(ctx: Context) : SQLiteOpenHelper(ctx, "miaoledger.db", null, 2) {
             while (c.moveToNext()) out.add(read(c))
         }
         return out
+    }
+
+    /**
+     * 从服务器整库拉回来的那一笔写进本地：**只插不覆盖**。
+     *
+     * 规则（写错就丢数据，改之前先想清楚）：
+     * - 本地已经有这个 uuid 的：一律跳过，不 update。手机才是主数据，服务器那份是备份；
+     *   拉回来只为了补本机没有的账，不能拿备份盖掉本机更新的内容。
+     * - 服务端说这笔已经删了（deleted=true）：本地有同 uuid 的就删掉本地行，没有就什么都不做。
+     *
+     * 返回本次真正插进去的笔数。
+     */
+    fun insertIfAbsent(t: Txn): Int {
+        if (t.uuid.isBlank()) return 0
+        if (t.deleted) {
+            writableDatabase.delete("txns", "uuid=?", arrayOf(t.uuid))
+            return 0
+        }
+        if (byUuid(t.uuid) != null) return 0
+        val v = android.content.ContentValues().apply {
+            put("uuid", t.uuid); put("book_id", t.bookId); put("cat_id", t.catId); put("acct_id", t.acctId)
+            put("kind", t.kind); put("cents", t.cents); put("at", t.at); put("note", t.note)
+            put("source", t.source); put("synced", 1); put("deleted", 0)
+            put("parsed_cat_id", t.parsedCatId); put("parsed_acct_id", t.parsedAcctId)
+            put("parsed_book_id", t.parsedBookId); put("ai_text", t.aiText)
+        }
+        // CONFLICT_IGNORE：并发下万一别的线程刚插了同 uuid，就别覆盖它
+        val id = writableDatabase.insertWithOnConflict("txns", null, v, SQLiteDatabase.CONFLICT_IGNORE)
+        return if (id > 0) 1 else 0
     }
 
     fun unsynced(): List<Txn> {

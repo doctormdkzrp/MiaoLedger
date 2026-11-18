@@ -347,6 +347,61 @@ class Api(private val prefs: Prefs) {
         exec(req("/api/v1/txns/$uuid", null, "DELETE"))
     }
 
+    /** 一页账单：服务端 full=1 拉回来的东西。total 是这次整库一共多少笔（翻页时每页都报同一个数）。 */
+    data class TxnPage(val items: List<Txn>, val nextCursor: String?, val total: Int)
+
+    /**
+     * 整库拉一页回来（换手机、重装、清空本地后把服务器那份拉回来用）。
+     * 软删的笔也会带 deleted=true 一起回来，调用方据此删本地行。
+     */
+    fun pullPage(cursor: String? = null, limit: Int = 500): TxnPage {
+        val q = StringBuilder("/api/v1/txns?full=1&limit=$limit")
+        if (!cursor.isNullOrBlank()) {
+            q.append("&cursor=").append(java.net.URLEncoder.encode(cursor, "UTF-8"))
+        }
+        val o = gson.fromJson(exec(req(q.toString())), JsonObject::class.java)
+        val arr = o.getAsJsonArray("items")
+        val out = ArrayList<Txn>()
+        if (arr != null) {
+            for (el in arr) {
+                runCatching { txnOf(el.asJsonObject) }.getOrNull()?.let { out.add(it) }
+            }
+        }
+        return TxnPage(
+            items = out,
+            nextCursor = o.get("next_cursor")?.takeIf { !it.isJsonNull }?.asString?.takeIf { it.isNotBlank() },
+            total = o.get("total")?.takeIf { !it.isJsonNull }?.asInt ?: out.size,
+        )
+    }
+
+    /** 服务端那一条账单 → 本地 Txn。字段缺了就当没填，不崩。 */
+    private fun txnOf(j: JsonObject): Txn {
+        fun lng(k: String): Long? = j.get(k)?.takeIf { !it.isJsonNull }?.asLong?.takeIf { it > 0 }
+        fun txt(k: String): String = j.get(k)?.takeIf { !it.isJsonNull }?.asString ?: ""
+        val at = j.get("occurred_at")?.takeIf { !it.isJsonNull }?.asString
+            ?.let {
+                runCatching {
+                    java.time.LocalDateTime.parse(it).atZone(java.time.ZoneId.systemDefault())
+                        .toInstant().toEpochMilli()
+                }.getOrNull()
+            }
+            ?: System.currentTimeMillis()
+        return Txn(
+            uuid = txt("client_uuid"),
+            bookId = lng("book_id"),
+            catId = lng("cat_id"),
+            acctId = lng("account_id"),
+            kind = txt("kind").ifBlank { "out" },
+            cents = j.get("amount_cents")?.takeIf { !it.isJsonNull }?.asLong ?: 0L,
+            at = at,
+            note = txt("note"),
+            source = txt("source").ifBlank { "manual" },
+            // 服务端那份就是备份，拉回来即已同步，不用再推一遍（推上去反而可能覆盖别的设备改的）
+            synced = true,
+            deleted = j.get("deleted")?.takeIf { !it.isJsonNull }?.asBoolean ?: false,
+        )
+    }
+
     data class ParseResult(
         val ok: Boolean,
         val kind: String,

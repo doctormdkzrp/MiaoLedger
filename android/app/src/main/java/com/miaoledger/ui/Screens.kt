@@ -110,6 +110,7 @@ import com.miaoledger.data.CsvExport
 import com.miaoledger.data.Feedback
 import com.miaoledger.data.LocalDb
 import com.miaoledger.data.Prefs
+import com.miaoledger.data.Restore
 import com.miaoledger.data.Sync
 import com.miaoledger.data.Txn
 import java.time.DayOfWeek
@@ -371,14 +372,42 @@ fun AppRoot(prefs: Prefs, db: LocalDb, api: Api) {
                 android.content.pm.PackageManager.PERMISSION_GRANTED
         )
     }
+    // 整库恢复的进度（换手机/重装/清空本地后第一次登录）：null = 没在恢复
+    var restoring by remember { mutableStateOf<Restore.Progress?>(null) }
 
     fun refresh() { reload++ }
+
+    /**
+     * 登录成功后调一次：本机一条账都没有，就去服务器把账整批拉回来。
+     * 失败不吭声（断网就是这样），下次启动自己接着拉。
+     */
+    fun restoreIfEmpty() {
+        if (db.countAll() > 0) {
+            // 本机有账，只需要接着上次没拉完的断点（如果上次断过）
+            if (!Restore.needed(prefs)) return
+        } else {
+            prefs.restorePending = true
+        }
+        Thread {
+            Restore.run(prefs, db, api) { p ->
+                // 拉取在后台线程跑，进度和刷新要回到主线程
+                val ui = android.os.Handler(android.os.Looper.getMainLooper())
+                ui.post {
+                    restoring = p
+                    // 每拉完一页就把已经拿到的账显示出来，别等全部拉完
+                    if (p == null || p.done > 0) refresh()
+                }
+            }
+        }.start()
+    }
 
     // 一打开 App 就试着备份一次（没网就算了，不弹窗），并把「每 6 小时自动备份」排上
     androidx.compose.runtime.LaunchedEffect(Unit) {
         if (prefs.loggedIn) {
             Backup.ensurePeriodic(ctx)
             Backup.now(ctx)
+            // 上次整库恢复如果拉到一半断了（换手机那次没拉完），接着拉，不打扰用户
+            restoreIfEmpty()
         }
     }
 
@@ -488,6 +517,8 @@ fun AppRoot(prefs: Prefs, db: LocalDb, api: Api) {
             refresh()
             Backup.ensurePeriodic(ctx)
             Backup.now(ctx)
+            // 换手机/重装/刚清空本地：登录后立刻把服务器那份账拉回来
+            restoreIfEmpty()
         }
         return
     }
@@ -573,6 +604,7 @@ fun AppRoot(prefs: Prefs, db: LocalDb, api: Api) {
                         onCalendar = { tab = 1; statsTab = 0 },
                         onEditTxn = { editTxn = it; subFrom = 0; sub = "add" },
                         onDeleteTxn = { deleteTxn(it) },
+                        restoring = restoring,
                     )
                     tab == 1 -> StatsScreen(
                         prefs = prefs, txns = txns.toList(), bookId = bookId,
@@ -689,6 +721,8 @@ fun HomeScreen(
     onCalendar: () -> Unit,
     onEditTxn: (Txn) -> Unit,
     onDeleteTxn: (Txn) -> Unit,
+    /** 整库恢复的进度；非空时把空态换成「正在恢复 N/总」。 */
+    restoring: Restore.Progress? = null,
 ) {
     var askDelete by remember { mutableStateOf<Txn?>(null) }
     val cats = prefs.cats.associateBy { it.id }
@@ -771,11 +805,20 @@ fun HomeScreen(
         if (grouped.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.TopCenter) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 40.dp)) {
-                    Text("🧾", fontSize = 40.sp)
-                    Spacer(Modifier.height(10.dp))
-                    Text("${month.monthValue}月还没记账", fontSize = 14.sp, color = MiaoInkSoft)
-                    Spacer(Modifier.height(4.dp))
-                    Text("点加号手动记账，长按加号语音记账", fontSize = 12.sp, color = MiaoDim)
+                    if (restoring != null) {
+                        // 换手机/重装后第一次登录：服务器那份正在往回搬，别让人以为账丢了
+                        Text("⏳", fontSize = 40.sp)
+                        Spacer(Modifier.height(10.dp))
+                        Text("正在恢复 ${restoring.done}/${restoring.total}", fontSize = 14.sp, color = MiaoInkSoft)
+                        Spacer(Modifier.height(4.dp))
+                        Text("账正在从服务器搬回来，先别关 App", fontSize = 12.sp, color = MiaoDim)
+                    } else {
+                        Text("🧾", fontSize = 40.sp)
+                        Spacer(Modifier.height(10.dp))
+                        Text("${month.monthValue}月还没记账", fontSize = 14.sp, color = MiaoInkSoft)
+                        Spacer(Modifier.height(4.dp))
+                        Text("点加号手动记账，长按加号语音记账", fontSize = 12.sp, color = MiaoDim)
+                    }
                 }
             }
         } else {

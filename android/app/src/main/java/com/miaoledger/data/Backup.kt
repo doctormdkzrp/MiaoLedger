@@ -15,6 +15,79 @@ import com.google.gson.JsonObject
 import java.util.concurrent.TimeUnit
 
 /**
+ * 下行恢复：本机一条账都没有时（换手机/重装/清空本地），把服务器上那份整库拉回来。
+ *
+ * 三条硬规则：
+ * - 只插不覆盖：本地已有的 uuid 一律跳过，不 update（手机是主数据，备份不能盖掉本机）。
+ * - 服务端标了 deleted 的笔不插入；本地有同 uuid 的删掉本地行。
+ * - 边拉边落库、游标边拉边记：中途断网不崩不弹框，下次启动从断点接着拉，重复拉也幂等。
+ */
+object Restore {
+    data class Progress(val done: Int, val total: Int)
+
+    /** 正在恢复的进度；null = 没在恢复。界面靠读这个显示「正在恢复 N/总」。 */
+    @Volatile
+    var progress: Progress? = null
+        private set
+
+    @Volatile
+    var running: Boolean = false
+        private set
+
+    private const val PAGE = 500
+
+    /**
+     * 该不该拉。只有两个入口能把它置起来，别在这儿加第三条：
+     * - 登录成功时本机一条账都没有（换手机、重装、清空本地后的第一次登录）；
+     * - 上次拉到一半断了（游标还留着）——下次启动接着拉。
+     */
+    fun needed(prefs: Prefs): Boolean = prefs.restorePending || prefs.restoreCursor.isNotEmpty()
+
+    /**
+     * 跑一次整库恢复，返回这次真正插进去多少笔。
+     * 网络错/服务端 5xx 一律静默返回（调用方不看错误、界面不弹框），下次启动再试。
+     *
+     * [onProgress] 每拉完一页回报一次进度（界面显示「正在恢复 N/总」），拉完/失败时报 null。
+     *
+     * 加锁：后台备份 Worker 和登录后那次恢复可能同时来，串起来跑，别两个人抢同一个游标。
+     */
+    @Synchronized
+    fun run(prefs: Prefs, db: LocalDb, api: Api, onProgress: ((Progress?) -> Unit)? = null): Int {
+        if (!prefs.loggedIn) return 0
+        if (!needed(prefs)) return 0
+        var inserted = 0
+        var cursor: String? = prefs.restoreCursor.takeIf { it.isNotEmpty() }
+        running = true
+        try {
+            while (true) {
+                val page = api.pullPage(cursor, PAGE)
+                for (t in page.items) inserted += db.insertIfAbsent(t)
+                // 游标先落盘再继续：这一步之后断网，下次也能从断点接上
+                prefs.restoreCursor = page.nextCursor.orEmpty()
+                val total = maxOf(page.total, inserted)
+                val p = Progress(done = minOf(inserted, total), total = total)
+                progress = p
+                onProgress?.invoke(p)
+                if (page.nextCursor == null) {
+                    prefs.restorePending = false
+                    prefs.lastPullAt = System.currentTimeMillis()
+                    return inserted
+                }
+                cursor = page.nextCursor
+            }
+        } catch (e: Exception) {
+            // 断网、服务端 5xx、token 失效都走这儿：安静收摊。
+            // 游标记着断点，restorePending 留着，下次启动接着拉。
+            return inserted
+        } finally {
+            running = false
+            progress = null
+            onProgress?.invoke(null)
+        }
+    }
+}
+
+/**
  * 备份：把手机上的账推一份到自己的服务器。
  * 手机才是主数据，服务器只是备份；所以备份失败不吵人，下次自己再试。
  */
@@ -36,6 +109,9 @@ object Sync {
             }
             // 1) 先拿服务端的账本/分类/账户，新建分类后也能立刻用上
             api.syncMeta()
+            // 2) 本机是空的就先整库拉回来（换手机/重装/清本地后第一次登录走这儿）。
+            //    失败静默：Restore 自己吞掉网络错，不打断后面的上行备份。
+            Restore.run(prefs, db, api)
             // 2) 没备份过的账推上去
             val rows = db.unsynced()
             if (rows.isNotEmpty()) {
