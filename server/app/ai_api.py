@@ -102,7 +102,13 @@ def ai_parse(body: ParseIn, user: User = Depends(current_user), db: Session = De
 
 @router.post("/feedback")
 def ai_feedback(body: FeedbackIn, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
-    """用户保存账单后回传「AI 解析的」和「实际保存的」，有差异就学成规则。"""
+    """用户保存账单后回传「AI 解析的」和「实际保存的」，只有分类变了才学成规则。
+
+    入参里只有 cat_id 的变化算纠错；final 里的 note/金额/时间、以及 account_id /
+    book_id 的变化都不生成规则，只照常累计一次反馈次数。
+    提取规则关键词只用 body.text（客户端传的原始语音识别文本 ai_text），
+    绝不用 body.note —— 那是用户人工改正后的备注，含语音错字纠正，学进去会把错字当别名。
+    """
     parsed = body.parsed.model_dump() if body.parsed else {}
     final = body.final.model_dump() if body.final else {}
     new_cat = body.new_category.model_dump() if body.new_category else None

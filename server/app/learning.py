@@ -1,7 +1,9 @@
-"""按账号隔离的 AI 学习：把用户的归类纠错沉淀成「关键词 → 分类/账户/账本」规则。
+"""按账号隔离的 AI 学习：把用户的「分类」纠错沉淀成「关键词 → 分类」规则。
+
+只学分类：改备注/金额/时间不算纠错，不生成规则（语音识别错字纠正不能被当成别名学）。
 
 两个层次：
-1. 规则（LearnedRule）：从一句话里抽出商户/服务名，记住用户把它归到了哪。
+1. 规则（LearnedRule）：从一句话里抽出商户/服务名，记住用户把它归到了哪个分类。
    weight >= 2 时解析直接定类（连模型都不用问）；weight = 1 的只作为 few-shot 注入提示词。
 2. 画像（UserAiProfile）：每累计 10 条反馈，把最近的纠错压成 <=5 行中文提示，解析时喂给模型。
    模型调用失败就把规则拼成几行，绝不抛错、绝不阻塞记账。
@@ -393,7 +395,13 @@ def learn_from_feedback(
     final: dict | None,
     new_category: dict | None = None,
 ) -> list[dict]:
-    """对比「AI 解析结果」和「用户最终保存的」，把变化的维度学成规则。
+    """对比「AI 解析结果」和「用户最终保存的」，只在分类变了时学成规则。
+
+    只学分类：`cat_id` 真的变了才写规则（改备注、改金额、改时间、改账户/账本都不算），
+    调用方无论如何都会照常 record_feedback 累计反馈次数。
+
+    规则关键词一律取自 text（原始语音识别文本 ai_text），绝不取 final 里人工改正后的
+    备注 —— 否则「买架子鼓」被改成「鸡叉骨」会把纠正结果学成别名，越用越错。
 
     new_category 表示用户采纳了「新建分类」建议：先建分类（或复用同名），
     这是明确表态，规则首次就记 weight=2，下次同类说法不用再问模型。
@@ -414,15 +422,16 @@ def learn_from_feedback(
                 db.add(new_cat)
                 db.flush()
 
+    # 只学分类：账户/账本改动、备注/金额/时间改动都不算纠错，一律不生成规则。
+    # （语音识别错字是用户改备注，不是归类出错，学了会把错字当成别名。）
     diffs: list[tuple[str, int | None, bool]] = []  # (kind, final_target_id, decisive)
     if new_cat is not None:
         diffs.append(("category", new_cat.id, True))
     elif final.get("cat_id") and parsed.get("cat_id") != final.get("cat_id"):
         diffs.append(("category", int(final["cat_id"]), False))
-    if final.get("account_id") and parsed.get("account_id") != final.get("account_id"):
-        diffs.append(("account", int(final["account_id"]), False))
-    if final.get("book_id") and parsed.get("book_id") != final.get("book_id"):
-        diffs.append(("book", int(final["book_id"]), False))
+
+    if not diffs:
+        return learned
 
     patterns = select_patterns(text, limit=2)
     if not patterns:
@@ -433,7 +442,7 @@ def learn_from_feedback(
         if target is None:
             continue
         tid, tname = target
-        for pat in (patterns if kind == "category" else patterns[:1]):
+        for pat in patterns:
             rule = upsert_rule(
                 db,
                 user.id,

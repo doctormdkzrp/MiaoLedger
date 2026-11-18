@@ -194,7 +194,8 @@ def test_correction_learns_after_second_hit(client, monkeypatch):
     assert learned["raw"]["learned_rule"] == "美发店理发"
 
 
-def test_account_correction_learns(client, monkeypatch):
+def test_account_correction_does_not_learn_rule(client, monkeypatch):
+    """账户改动不再学规则（WO-04 只学分类）：规则条数不变，但反馈次数照常累计。"""
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     token = register(client, "ai_acct")
     m = meta(client, token)
@@ -211,8 +212,120 @@ def test_account_correction_learns(client, monkeypatch):
             headers=h(token),
         )
         assert r.status_code == 200, r.text
+        assert r.json()["learned"] == []
+    assert client.get("/api/v1/ai/rules", headers=h(token)).json()["rules"] == []
+    # 反馈次数仍然照常累计（画像刷新依赖它）
+    assert client.get("/api/v1/ai/profile", headers=h(token)).json()["feedback_count"] == 2
     d = parse(client, token, "Open Code 订阅 120")
-    assert d["account_name"] == "支付宝"
+    assert d["account_name"] != "支付宝"
+    assert "learned_rule" not in (d["raw"] or {})
+
+
+# ---------------------------------------------------------------- WO-04：只学分类
+
+
+def rules_of(client, token: str) -> list[dict]:
+    return client.get("/api/v1/ai/rules", headers=h(token)).json()["rules"]
+
+
+def test_note_only_correction_learns_nothing(client, monkeypatch):
+    """改备注（不动分类）→ 不生成规则、规则条数不变，只累计反馈次数。"""
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    token = register(client, "ai_note")
+    m = meta(client, token)
+    food = cat_id(m, "餐饮")
+    other = cat_id(m, "其它")
+
+    # 先正常学一条分类规则，确认基线
+    for _ in range(2):
+        client.post(
+            "/api/v1/ai/feedback",
+            json={"text": "美发店理发 28", "parsed": {"cat_id": other}, "final": {"cat_id": food}},
+            headers=h(token),
+        )
+    before = rules_of(client, token)
+    assert len(before) == 1
+
+    # 只改备注（分类前后一致）→ learned 为空、规则条数不变
+    r = client.post(
+        "/api/v1/ai/feedback",
+        json={
+            "text": "买鸡叉骨 17 元",
+            "note": "鸡叉骨",
+            "parsed": {"cat_id": food, "account_id": acct_id(m, "微信")},
+            "final": {"cat_id": food, "note": "鸡叉骨", "amount_cents": 1700},
+        },
+        headers=h(token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["learned"] == []
+    after = rules_of(client, token)
+    assert len(after) == len(before)
+    assert {r["pattern"] for r in after} == {r["pattern"] for r in before}
+    # 反馈次数照常 +1
+    assert client.get("/api/v1/ai/profile", headers=h(token)).json()["feedback_count"] == 3
+
+
+def test_category_correction_learns_from_original_text(client, monkeypatch):
+    """改分类 → 规则 +1，且关键词取自原始 ai_text，不取人工改正后的备注。"""
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    token = register(client, "ai_cat_text")
+    m = meta(client, token)
+    food = cat_id(m, "餐饮")
+    shopping = cat_id(m, "购物")
+
+    r = client.post(
+        "/api/v1/ai/feedback",
+        json={
+            "text": "买鸡叉骨 17 元",  # 原始语音识别文本，关键词只能从这里来
+            "note": "买鸡叉骨 17 元",
+            "parsed": {"cat_id": shopping},
+            "final": {"cat_id": food, "note": "红烧鸡叉骨"},  # 备注是人工改的，不该被学
+        },
+        headers=h(token),
+    )
+    assert r.status_code == 200, r.text
+    learned = r.json()["learned"]
+    assert len(learned) == 1
+    assert learned[0]["kind"] == "category"
+    assert learned[0]["pattern"] == "鸡叉骨"
+    assert learned[0]["target_name"] == "餐饮"
+    assert learned[0]["weight"] == 1
+
+    rules = rules_of(client, token)
+    assert len(rules) == 1
+    assert rules[0]["pattern"] == "鸡叉骨"
+    # 人工改正后的备注没有混进规则
+    assert "红烧" not in rules[0]["pattern"]
+
+
+def test_typo_note_fix_does_not_pin_misheard_word(client, monkeypatch):
+    """「买鸡叉骨」被听成「买架子鼓」、用户只改备注 → 不产生指向「架子鼓」的规则。"""
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    token = register(client, "ai_typo")
+    m = meta(client, token)
+    shopping = cat_id(m, "购物")
+
+    for _ in range(3):  # 反复三次也不会攒出规则（数量不能累加）
+        r = client.post(
+            "/api/v1/ai/feedback",
+            json={
+                "text": "买架子鼓 17 元",  # 这是被听错的原始文本
+                "note": "买鸡叉骨 17 元",
+                "parsed": {"cat_id": shopping},
+                "final": {"cat_id": shopping, "note": "买鸡叉骨 17 元"},  # 分类没变，只改了备注
+            },
+            headers=h(token),
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["learned"] == []
+
+    rules = rules_of(client, token)
+    assert rules == []
+    # 分类没被「架子鼓」硬掰；解析「鸡叉骨」时也没有命中任何学到的规则
+    d = parse(client, token, "买鸡叉骨 17 元")
+    assert "learned_rule" not in (d["raw"] or {})
+    assert d["cat_name"] != "餐饮"
 
 
 # ---------------------------------------------------------------- 画像
