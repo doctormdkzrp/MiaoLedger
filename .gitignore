@@ -19,6 +19,8 @@ local.properties
 *.aab
 *.keystore
 *.jks
+# release 签名参数（真实口令/路径）；模板 keystore.properties.example 要提交
+keystore.properties
 captures/
 .externalNativeBuild/
 .cxx/
