@@ -37,7 +37,7 @@ from .db import SessionLocal, get_db, init_db
 from .models import Account, Book, Category, Txn, User
 from .schemas import AccountIn, BookIn, CategoryIn, MeOut, PushIn, PushOut, TxnOut, TxnPatchIn
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 
 
 @asynccontextmanager

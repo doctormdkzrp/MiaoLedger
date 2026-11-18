@@ -98,7 +98,7 @@ def ai_parse(body: ParseIn, user: User = Depends(current_user), db: Session = De
         confidence=res["confidence"],
         raw=raw,
         needs=res["needs"],
-        suggest_category=res.get("suggest_category"),
+        suggest_category=res.get("suggest_category") or {},
     )
 
 

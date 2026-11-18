@@ -465,8 +465,8 @@ class Api(private val prefs: Prefs) {
         val at = o.get("occurred_at")?.takeIf { !it.isJsonNull }?.asString
             ?.let { runCatching { java.time.LocalDateTime.parse(it).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli() }.getOrNull() }
             ?: System.currentTimeMillis()
-        val raw = o.getAsJsonObject("raw")
-        val suggest = o.getAsJsonObject("suggest_category")
+        val raw = o.get("raw")?.takeIf { !it.isJsonNull && it.isJsonObject }?.asJsonObject
+        val suggest = o.get("suggest_category")?.takeIf { !it.isJsonNull && it.isJsonObject }?.asJsonObject
         val learnedRaw = raw?.get("learned_rule")
         val learned = when {
             learnedRaw == null || learnedRaw.isJsonNull -> null
@@ -489,7 +489,7 @@ class Api(private val prefs: Prefs) {
             note = o.get("note")?.takeIf { !it.isJsonNull }?.asString ?: text,
             at = at,
             confidence = o.get("confidence")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0,
-            needs = gson.fromJson(o.getAsJsonArray("needs"), object : TypeToken<List<String>>() {}.type) ?: emptyList(),
+            needs = o.get("needs")?.takeIf { !it.isJsonNull && it.isJsonArray }?.let { a -> gson.fromJson(a, object : TypeToken<List<String>>() {}.type) } ?: emptyList(),
             engine = raw?.get("engine")?.takeIf { !it.isJsonNull }?.asString,
             suggestName = suggest?.get("name")?.takeIf { !it.isJsonNull }?.asString,
             suggestKind = suggest?.get("kind")?.takeIf { !it.isJsonNull }?.asString ?: "out",
