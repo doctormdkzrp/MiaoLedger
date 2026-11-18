@@ -76,6 +76,8 @@ def ai_parse(body: ParseIn, user: User = Depends(current_user), db: Session = De
     )
 
     raw: dict = {"engine": res["engine"]}
+    # App 靠 intent 分流：query 的是在问账，交给 /api/v1/ask 算真数字，不当记账处理
+    raw["intent"] = res.get("intent") or "record"
     if res.get("learned_rule"):  # App 据此显示「AI 已学会」
         raw["learned_rule"] = res["learned_rule"]
     if res.get("learned_target"):

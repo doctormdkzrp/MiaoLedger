@@ -453,6 +453,8 @@ class Api(private val prefs: Prefs) {
         val suggestIcon: String = "🏷",
         // AI 这次顺便学会的一条规律，例如「Open Code → AI 研究」
         val learnedRule: String? = null,
+        // 服务端判断这句话是在问账（而不是要记一笔）时给 "query"，客户端据此转去问账接口
+        val intent: String = "record",
     )
 
     fun parse(text: String): ParseResult {
@@ -493,11 +495,73 @@ class Api(private val prefs: Prefs) {
             suggestKind = suggest?.get("kind")?.takeIf { !it.isJsonNull }?.asString ?: "out",
             suggestIcon = suggest?.get("icon")?.takeIf { !it.isJsonNull }?.asString ?: "🏷",
             learnedRule = learned,
+            intent = raw?.get("intent")?.takeIf { !it.isJsonNull }?.asString ?: "record",
         )
     }
 
     fun summary(month: String): JsonObject =
         gson.fromJson(exec(req("/api/v1/summary?month=$month")), JsonObject::class.java)
+
+    /** 「它查了什么」里的一行：某个分类/账本/某天花了多少。 */
+    data class AskRow(val name: String, val cents: Long, val count: Int)
+
+    /**
+     * 问账的结果。answer 是服务端写好的一句人话；plan 是校验后真正执行的条件（折叠展示用）；
+     * totalCents/count/rows 是服务端用 SQL 算出来的真实数字，界面不自己算。
+     */
+    data class AskResult(
+        val answer: String,
+        val metric: String,
+        val dateFrom: String,
+        val dateTo: String,
+        val categories: List<String>,
+        val totalCents: Long,
+        val count: Int,
+        val rows: List<AskRow>,
+    ) {
+        /** 给用户看的「它查了什么」，例如「2026-11-01 ~ 2026-11-30 · 餐饮 · 合计」。 */
+        val planText: String
+            get() {
+                val span = if (dateFrom.isNotEmpty()) "$dateFrom ~ $dateTo" else "全部时间"
+                val what = if (categories.isEmpty()) "全部支出" else categories.joinToString("、")
+                val metricCn = when (metric) {
+                    "count" -> "笔数"
+                    "avg" -> "平均"
+                    else -> "合计"
+                }
+                return "$span · $what · $metricCn"
+            }
+    }
+
+    /** 问一句账目统计。服务端的模型只做翻译，数字由服务端算，客户端不参与计算。 */
+    fun ask(text: String): AskResult {
+        val body = gson.toJson(mapOf("text" to text))
+        val o = gson.fromJson(exec(req("/api/v1/ask", body, "POST")), JsonObject::class.java)
+        val q = o.getAsJsonObject("query") ?: JsonObject()
+        val d = o.getAsJsonObject("data") ?: JsonObject()
+        val cats = q.getAsJsonArray("categories")
+            ?.mapNotNull { runCatching { it.asString }.getOrNull() } ?: emptyList()
+        val rows = d.getAsJsonArray("rows")?.mapNotNull { el ->
+            runCatching {
+                val r = el.asJsonObject
+                AskRow(
+                    name = r.get("name")?.takeIf { !it.isJsonNull }?.asString ?: "",
+                    cents = r.get("cents")?.takeIf { !it.isJsonNull }?.asLong ?: 0L,
+                    count = r.get("count")?.takeIf { !it.isJsonNull }?.asInt ?: 0,
+                )
+            }.getOrNull()
+        } ?: emptyList()
+        return AskResult(
+            answer = o.get("answer")?.takeIf { !it.isJsonNull }?.asString ?: "",
+            metric = q.get("metric")?.takeIf { !it.isJsonNull }?.asString ?: "sum",
+            dateFrom = q.get("date_from")?.takeIf { !it.isJsonNull }?.asString ?: "",
+            dateTo = q.get("date_to")?.takeIf { !it.isJsonNull }?.asString ?: "",
+            categories = cats,
+            totalCents = d.get("total_cents")?.takeIf { !it.isJsonNull }?.asLong ?: 0L,
+            count = d.get("count")?.takeIf { !it.isJsonNull }?.asInt ?: 0,
+            rows = rows,
+        )
+    }
 
     fun health(): Boolean = runCatching { exec(req("/health", auth = false)); true }.getOrDefault(false)
 }

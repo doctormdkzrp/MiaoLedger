@@ -1555,7 +1555,17 @@ private fun MonthBarsCard(monthTotals: List<Pair<YearMonth, Long>>, cur: YearMon
 // ================================================================== AI
 sealed interface AiMsg {
     data class Mine(val text: String) : AiMsg
-    data class Bot(val text: String) : AiMsg
+
+    /**
+     * 机器人说的话。问账的答案会把「它查了什么」带上（plan + rows），
+     * 界面默认折叠，点开才看 —— 主要是让人能自己核对数字是不是这么算出来的。
+     */
+    data class Bot(
+        val text: String,
+        val plan: String? = null,
+        val rows: List<Pair<String, String>> = emptyList(),
+    ) : AiMsg
+
     data class Card(val uuid: String) : AiMsg
 }
 
@@ -1638,12 +1648,6 @@ fun AiScreen(
             else -> ""
         }
         return "本月支出 ${fmt(total)}，$trend\n花得最多的是：\n$top$extra"
-    }
-
-    fun looksLikeTxn(s: String): Boolean {
-        val q = s.contains("？") || s.contains("?")
-        val kw = listOf("多少", "为什么", "哪", "省", "比上", "排行", "分析", "怎么样", "花哪")
-        return !q && kw.none { s.contains(it) }
     }
 
     fun mainPost(block: () -> Unit) {
@@ -1748,33 +1752,47 @@ fun AiScreen(
         if (t.isEmpty()) return
         msgs.add(AiMsg.Mine(t))
         input = ""
-        if (looksLikeTxn(t)) {
-            busy = true
-            Thread {
-                try {
-                    saveParsed(api.parse(t), t)
-                } catch (e: Exception) {
-                    mainPost {
-                        msgs.add(
-                            AiMsg.Bot(
-                                ((e as? ApiError)?.message ?: "连不上服务器。")
-                                    + " 没网也能先手打记一笔，回头会自动补上。"
-                            )
-                        )
-                        busy = false
-                    }
-                }
-            }.start()
-        } else {
-            busy = true
-            Thread {
-                val answer = localAnswer(t, db.all())
+        busy = true
+        Thread {
+            // 入口分流只有一条规则，别在这里发明分类器：
+            // 先问 /ai/parse；金额 > 0 且服务端没说这是问句 → 记账（原有逻辑原样保留）；
+            // 其余一律转去 /ask，让服务端用 SQL 算数字。
+            val parsed = runCatching { api.parse(t) }.getOrNull()
+            if (parsed == null) {
                 mainPost {
-                    msgs.add(AiMsg.Bot(answer))
+                    msgs.add(AiMsg.Bot("连不上服务器。 没网也能先手打记一笔，回头会自动补上。"))
                     busy = false
                 }
-            }.start()
-        }
+                return@Thread
+            }
+            val cents = parsed.cents ?: 0L
+            if (cents > 0L && parsed.intent != "query") {
+                saveParsed(parsed, t)
+                return@Thread
+            }
+            val asked = runCatching { api.ask(t) }
+            mainPost {
+                val result = asked.getOrNull()
+                if (result != null) {
+                    msgs.add(
+                        AiMsg.Bot(
+                            text = result.answer,
+                            plan = result.planText,
+                            rows = result.rows.take(6).map { it.name to fmtPlain(it.cents) },
+                        )
+                    )
+                } else {
+                    val err = asked.exceptionOrNull() as? ApiError
+                    if (err?.notDeployed == true) {
+                        // 服务端还是老版本，没有问账接口：退回本机粗算，并说清是本地估的
+                        msgs.add(AiMsg.Bot(localAnswer(t, db.all())))
+                    } else {
+                        msgs.add(AiMsg.Bot(err?.message ?: "这句我没算出来，换个说法再问？"))
+                    }
+                }
+                busy = false
+            }
+        }.start()
     }
 
     androidx.compose.runtime.LaunchedEffect(seed) {
@@ -1876,7 +1894,29 @@ fun AiScreen(
                             color = Color.White, shape = RoundedCornerShape(16.dp),
                             modifier = Modifier.widthIn(max = 290.dp),
                         ) {
-                            Text(m.text, fontSize = 13.sp, color = MiaoInk, modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp))
+                            Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                                Text(m.text, fontSize = 13.sp, color = MiaoInk)
+                                if (m.plan != null) {
+                                    // 「它查了什么」：折叠起来，点一下才展开，方便自己核对数字
+                                    var open by remember(m.plan) { mutableStateOf(false) }
+                                    Spacer(Modifier.height(6.dp))
+                                    Text(
+                                        if (open) "收起" else "它查了什么 ▾",
+                                        fontSize = 11.sp, color = MiaoDim,
+                                        modifier = Modifier.clickable { open = !open },
+                                    )
+                                    if (open) {
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(m.plan, fontSize = 10.sp, color = MiaoDim)
+                                        m.rows.forEach { row ->
+                                            Text(
+                                                "· ${row.first} ${row.second}",
+                                                fontSize = 10.sp, color = MiaoDim,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     is AiMsg.Card -> {

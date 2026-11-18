@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from .admin_api import router as admin_router
 from .ai_api import router as ai_router
 from .asr import transcribe_wav
+from .ask import router as ask_router
 from .auth import current_user, promote_from_env
 from .auth_api import router as auth_router
 from .common import (
@@ -71,6 +72,8 @@ if os.path.isdir(_apk_dir):
 app.include_router(auth_router)
 # AI 解析 / 反馈学习 / 规则 / 画像（按账号隔离）
 app.include_router(ai_router)
+# 自然语言提问：模型只翻译条件，数字由服务端 SQL 算
+app.include_router(ask_router)
 # 管理台：用户管理 + 代用户操作账本/账单/画像/导入导出（要求 role=admin）
 app.include_router(admin_router)
 

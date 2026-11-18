@@ -154,6 +154,20 @@ class AiProfileIn(BaseModel):
     hints: str = ""
 
 
+class AskIn(BaseModel):
+    """问一句账目统计。now 只给测试用，正常由服务端取当前时间。"""
+    text: str = Field(min_length=1, max_length=300)
+    now: datetime | None = None
+
+
+class AskOut(BaseModel):
+    """answer 是一句人话；query 是校验后真正执行的条件（客户端折叠展示）；
+    data 里是服务端算出来的真实数字，不含明细行。"""
+    answer: str = ""
+    query: dict = {}
+    data: dict = {}
+
+
 class AdminUserIn(BaseModel):
     username: str = ""
     pin: str = ""

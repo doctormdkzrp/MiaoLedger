@@ -151,6 +151,12 @@ def _fallback(text: str, now: datetime) -> dict:
     cat = _best_hit(t, INCOME_CAT_KEYWORDS if kind == "in" else CAT_KEYWORDS)
     acct = _best_hit(t.lower(), ACCOUNT_KEYWORDS)
 
+    # 没抠出金额、又明显是在问统计 → 当成问句（客户端据此转去 /api/v1/ask）。
+    # 有金额的一律当记账，哪怕句尾带问号：用户说「午饭 25？」也是想记这一笔。
+    is_query = cents is None and any(
+        k in t for k in ("多少", "几笔", "几次", "一共", "总共", "合计", "平均", "哪花", "排行")
+    )
+
     return {
         "kind": kind,
         "amount_cents": cents,
@@ -160,6 +166,7 @@ def _fallback(text: str, now: datetime) -> dict:
         "note": t[:80],
         "confidence": 0.55 if cents else 0.2,
         "engine": "rules",
+        "intent": "query" if is_query else "record",
     }
 
 
@@ -217,7 +224,10 @@ def _build_prompt(
         f"可选分类（括号里是这个分类管什么）：{cat_lines}。\n"
         f"可选账户：{acct_lines}。\n"
         "规则：说『AA』『一起』按用户实际支付金额记；没提金额就 amount 给 null；"
-        "没提账户就 account 给 null（不要瞎猜）；分类按括号里的说明对号入座，拿不准就 null。"
+        "没提账户就 account 给 null（不要瞎猜）；分类按括号里的说明对号入座，拿不准就 null。\n"
+        "如果这句话是在问账目统计（「这个月买吃的花了多少」「上个月一共花了几笔」这类），"
+        "而不是要记一笔，就把 intent 设成 \"query\"、amount 设成 0；"
+        "否则 intent 给 \"record\"。"
     )
     few_shots = learning.rules_for_prompt(rules, limit=8) if rules else []
     if few_shots:
@@ -303,6 +313,14 @@ def parse_text(
         cents = int(round(float(amount) * 100))
     elif raw.get("amount_cents"):
         cents = int(raw["amount_cents"])
+
+    # 问句：模型判成「在问账」时不走记账，金额归 0，交给 /ask 去算真数字。
+    intent = "query" if str(raw.get("intent") or "").strip().lower() == "query" else "record"
+    if intent == "query":
+        cents = 0
+    if engine == "learned" and learned_hits:
+        # 已经命中「这个说法该归某类」的规矩，那这句一定是记账，不可能是问账
+        intent = "record"
 
     kind = "in" if str(raw.get("kind", "out")).lower() in ("in", "income", "收入") else "out"
 
@@ -412,6 +430,7 @@ def parse_text(
         "note": (raw.get("note") or text)[:80],
         "confidence": round(conf, 2),
         "engine": engine,
+        "intent": intent,
         "learned_rule": learned_rule,
         "learned_target": learned_target,
         "suggest_category": suggest,
