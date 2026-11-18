@@ -13,7 +13,7 @@ from datetime import datetime
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -35,10 +35,11 @@ from .common import (
 )
 from .db import SessionLocal, get_db, init_db
 from .guard import GuardMiddleware
+from .landing import render as render_landing
 from .models import Account, Book, Category, Txn, User
 from .schemas import AccountIn, BookIn, CategoryIn, MeOut, PushIn, PushOut, TxnOut, TxnPatchIn
 
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 
 
 @asynccontextmanager
@@ -90,6 +91,15 @@ app.include_router(ai_router)
 app.include_router(ask_router)
 # 管理台：用户管理 + 代用户操作账本/账单/画像/导入导出（要求 role=admin）
 app.include_router(admin_router)
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def landing() -> str:
+    """首页落地页：给家里人看的，放最新 APK 的下载入口。
+
+    不放任何接口细节；APK 名字取 /apk 目录里最新的那个，换包不用改代码。
+    """
+    return render_landing()
 
 
 @app.get("/health")
