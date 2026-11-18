@@ -39,7 +39,7 @@ from .landing import render as render_landing
 from .models import Account, Book, Category, Txn, User
 from .schemas import AccountIn, BookIn, CategoryIn, MeOut, PushIn, PushOut, TxnOut, TxnPatchIn
 
-APP_VERSION = "1.1.3"
+APP_VERSION = "1.1.4"
 
 
 @asynccontextmanager

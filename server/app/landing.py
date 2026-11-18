@@ -70,6 +70,7 @@ _HTML = """<!DOCTYPE html>
     font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
                  "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
     line-height: 1.65;
+    text-wrap: pretty;
     min-height: 100vh;
   }
   .wrap { max-width: 460px; margin: 0 auto; }
@@ -77,7 +78,7 @@ _HTML = """<!DOCTYPE html>
     background: var(--card);
     border: 1px solid var(--line);
     border-radius: 20px;
-    padding: 28px 22px 24px;
+    padding: 28px 22px 20px;
     box-shadow: 0 10px 30px -18px rgba(120, 90, 60, .35);
   }
   .title { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; }
@@ -100,6 +101,7 @@ _HTML = """<!DOCTYPE html>
     padding: 12px 0; border-top: 1px dashed var(--line); font-size: 14px;
   }
   .steps li:first-child { border-top: 0; }
+  .nb { white-space: nowrap; }
   .num {
     flex: 0 0 24px; height: 24px; border-radius: 50%;
     background: var(--accent-soft); color: var(--accent);
@@ -107,6 +109,8 @@ _HTML = """<!DOCTYPE html>
     display: flex; align-items: center; justify-content: center;
   }
   code {
+    display: inline-block; max-width: 100%;
+    overflow-wrap: anywhere; word-break: break-all;
     background: #f6f1e9; border: 1px solid var(--line); border-radius: 8px;
     padding: 2px 7px; font-size: 13px; word-break: break-all;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -114,7 +118,7 @@ _HTML = """<!DOCTYPE html>
   }
   .status {
     display: flex; align-items: center; gap: 8px; justify-content: center;
-    margin-top: 22px; font-size: 13px; color: var(--muted);
+    margin-top: 16px; font-size: 13px; color: var(--muted);
   }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: #c9c0b4; }
   .dot.ok { background: var(--ok); box-shadow: 0 0 0 4px rgba(76,154,106,.12); }
@@ -128,15 +132,15 @@ _HTML = """<!DOCTYPE html>
 
     <div class="card">
       <div class="title"><svg class="paw" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="21" rx="8.2" ry="6.6"/><ellipse cx="7.2" cy="12.6" rx="3.3" ry="4.1"/><ellipse cx="13.2" cy="8.6" rx="3.3" ry="4.3"/><ellipse cx="19.6" cy="8.6" rx="3.3" ry="4.3"/><ellipse cx="25.4" cy="12.8" rx="3.2" ry="4"/></svg><h1>小喵记账</h1></div>
-      <p class="lead">张嘴说一句「买菜三十八」，它就替你记好。<br>账只存自己手机和自家服务器上，不交给别人。</p>
+      <p class="lead">张嘴说一句「买菜三十八」，它就替你记好。<br>账只留在自己手机和自家服务器上。</p>
 
       <a class="btn" href="/apk/{{APK}}" download>下载安卓版</a>
       <span class="btn-sub">点一下直接从自家服务器下载 · {{SIZE}}</span>
 
       <ul class="steps">
-        <li><span class="num">1</span><div>下载后按提示安装。手机若提示「未知来源」，允许一次即可。</div></li>
+        <li><span class="num">1</span><div>下载后按提示安装。手机若提示「<span class="nb">未知来源</span>」，允许一次即可。</div></li>
         <li><span class="num">2</span><div>打开 App，服务器地址填<br><code>https://jz.doctormdkzrp.cn</code></div></li>
-        <li><span class="num">3</span><div>用张汝沛给你的<b>邀请码</b>注册，再设一个 6 位数字密码，就完事了。</div></li>
+        <li><span class="num">3</span><div>用张汝沛给你的<b>邀请码</b>注册，再设一个 <span class="nb">6 位数字密码</span>，就完事了。</div></li>
       </ul>
 
       <div class="status"><span class="dot" id="dot"></span><span id="st">正在看一眼服务…</span></div>
