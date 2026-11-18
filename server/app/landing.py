@@ -29,9 +29,18 @@ def latest_apk_name() -> str:
     return newest.name
 
 
+def _apk_size(name: str) -> str:
+    d = Path(os.getenv("APK_DIR", "/apk"))
+    try:
+        mb = (d / name).stat().st_size / 1024 / 1024
+    except OSError:
+        return "安装包约 19 MB"
+    return f"安装包 {mb:.0f} MB"
+
+
 def render(apk_name: str | None = None) -> str:
     apk = apk_name or latest_apk_name()
-    return _HTML.replace("{{APK}}", apk)
+    return _HTML.replace("{{APK}}", apk).replace("{{SIZE}}", _apk_size(apk))
 
 
 _HTML = """<!DOCTYPE html>
@@ -73,7 +82,8 @@ _HTML = """<!DOCTYPE html>
   }
   .title { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; }
   .title h1 { font-size: 22px; margin: 0; letter-spacing: .5px; font-weight: 650; }
-  .paw { font-size: 22px; }
+  .paw { width: 27px; height: 27px; fill: var(--accent); flex: 0 0 auto; }
+  .ico { width: 13px; height: 13px; fill: #c3b6a6; vertical-align: -2px; margin-right: 5px; }
   .lead { margin: 0 0 22px; color: var(--muted); font-size: 14.5px; }
   .btn {
     display: block; width: 100%; text-align: center; text-decoration: none;
@@ -114,14 +124,14 @@ _HTML = """<!DOCTYPE html>
 </head>
 <body>
   <div class="wrap">
-    <div class="seal">🏠 家里那本账，两个人一起记</div>
+    <div class="seal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2 3.5 10h2v9h5v-6h3v6h5v-9h2L12 3.2z"/></svg>家里那本账，两个人一起记</div>
 
     <div class="card">
-      <div class="title"><span class="paw">🐾</span><h1>小喵记账</h1></div>
+      <div class="title"><svg class="paw" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="21" rx="8.2" ry="6.6"/><ellipse cx="7.2" cy="12.6" rx="3.3" ry="4.1"/><ellipse cx="13.2" cy="8.6" rx="3.3" ry="4.3"/><ellipse cx="19.6" cy="8.6" rx="3.3" ry="4.3"/><ellipse cx="25.4" cy="12.8" rx="3.2" ry="4"/></svg><h1>小喵记账</h1></div>
       <p class="lead">张嘴说一句「买菜三十八」，它就替你记好。<br>账只存自己手机和自家服务器上，不交给别人。</p>
 
       <a class="btn" href="/apk/{{APK}}" download>下载安卓版</a>
-      <span class="btn-sub">点一下从自家服务器直接下载，不经过应用商店</span>
+      <span class="btn-sub">点一下直接从自家服务器下载 · {{SIZE}}</span>
 
       <ul class="steps">
         <li><span class="num">1</span><div>下载后按提示安装。手机若提示「未知来源」，允许一次即可。</div></li>
