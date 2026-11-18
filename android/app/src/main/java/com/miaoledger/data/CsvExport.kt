@@ -14,6 +14,9 @@ object CsvExport {
 
     private const val BOM = "\uFEFF"
 
+    /** 「账户」列固定值。账户已从记账流程砍掉，但 9 列表头和列序不许变。 */
+    private const val ACCT_PLACEHOLDER = "不计入账户"
+
     fun defaultName(): String =
         "账单-" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd")) + ".csv"
 
@@ -36,7 +39,6 @@ object CsvExport {
         books: List<Book> = emptyList(),
     ): String {
         val catName = cats.associate { it.id to it.name }
-        val acctName = accts.associate { it.id to it.name }
         val bookName = books.associate { it.id to it.name }
         val sb = StringBuilder(BOM)
         sb.append("日期,时间,类型,金额,分类,账户,账本,备注,来源\r\n")
@@ -52,7 +54,8 @@ object CsvExport {
                     kind,
                     amount,
                     catName[t.catId ?: -1L] ?: "其它",
-                    acctName[t.acctId ?: -1L] ?: "",
+                    // 「账户」列固定写这个：账户已从记账流程里砍掉，列不能删（表头与列序不许变）
+                    ACCT_PLACEHOLDER,
                     bookName[t.bookId ?: -1L] ?: "",
                     t.note,
                     srcCn(t.source),

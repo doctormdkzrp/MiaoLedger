@@ -530,7 +530,7 @@ fun AppRoot(prefs: Prefs, db: LocalDb, api: Api) {
                     sub == "add" -> AddScreen(
                         prefs = prefs,
                         initial = editTxn,
-                        onSave = { kind, cents, cat, acct, note, at ->
+                        onSave = { kind, cents, cat, acctId, note, at ->
                             val old = editTxn
                             val newBookId = old?.bookId ?: prefs.bookId.takeIf { it > 0 }
                             db.upsertLocal(
@@ -538,7 +538,7 @@ fun AppRoot(prefs: Prefs, db: LocalDb, api: Api) {
                                     uuid = old?.uuid ?: db.newUuid(),
                                     bookId = newBookId,
                                     catId = cat?.id,
-                                    acctId = acct?.id,
+                                    acctId = acctId,
                                     kind = kind,
                                     cents = cents,
                                     at = at,
@@ -556,13 +556,13 @@ fun AppRoot(prefs: Prefs, db: LocalDb, api: Api) {
                             Feedback.correctionPayload(
                                 old = old,
                                 newCatId = cat?.id,
-                                newAcctId = acct?.id,
+                                newAcctId = acctId,
                                 newBookId = newBookId,
                                 kind = kind,
                                 cents = cents,
                                 note = note,
                             )?.let { db.enqueueFeedback(it) }
-                            prefs.lastAcctId = acct?.id ?: prefs.lastAcctId
+                            prefs.lastAcctId = acctId ?: prefs.lastAcctId
                             Backup.afterSave(ctx)
                             sub = null
                             editTxn = null
@@ -913,7 +913,7 @@ private fun TxnRow(
 fun AddScreen(
     prefs: Prefs,
     initial: Txn? = null,
-    onSave: (String, Long, Cat?, Acct?, String, Long) -> Unit,
+    onSave: (String, Long, Cat?, Long?, String, Long) -> Unit,
     onDelete: (Txn) -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -928,15 +928,13 @@ fun AddScreen(
                 ?: prefs.cats.firstOrNull()
         )
     }
-    var acct by remember {
-        mutableStateOf(
-            prefs.accts.firstOrNull { it.id == initial?.acctId }
-                ?: prefs.accts.firstOrNull { it.id == prefs.lastAcctId }
-                ?: prefs.accts.firstOrNull()
-        )
+    // 这一栏已从界面删掉，只保留值：老账沿用原值，新账沿用上次的（取不到就留空）
+    val acctId = remember {
+        initial?.acctId
+            ?: prefs.lastAcctId.takeIf { it > 0 }
+            ?: prefs.accts.firstOrNull()?.id
     }
     var at by remember { mutableLongStateOf(initial?.at ?: System.currentTimeMillis()) }
-    var askAcct by remember { mutableStateOf(false) }
     var askNote by remember { mutableStateOf(false) }
     var askDel by remember { mutableStateOf(false) }
 
@@ -988,16 +986,16 @@ fun AddScreen(
             }
         }
 
-        // 备注 + 账户 + 金额：一行看全，金额给足字号
+        // 备注 + 金额：一行看全，金额给足字号
         Surface(
             color = Color.White, shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
             Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(44.dp).background(MiaoBlueSoft, CircleShape).clickable { askAcct = true },
+                    Modifier.size(44.dp).background(MiaoBlueSoft, CircleShape).clickable { askNote = true },
                     contentAlignment = Alignment.Center,
-                ) { Text("💳", fontSize = 19.sp) }
+                ) { Text("📝", fontSize = 19.sp) }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
@@ -1008,9 +1006,8 @@ fun AddScreen(
                     )
                     Spacer(Modifier.height(3.dp))
                     Text(
-                        "${acct?.name ?: "未选账户"} · $dateLabel",
+                        dateLabel,
                         fontSize = 11.sp, color = MiaoDim, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.clickable { askAcct = true },
                     )
                 }
                 Spacer(Modifier.width(8.dp))
@@ -1107,7 +1104,7 @@ fun AddScreen(
                                         "今天" -> pickDate(ctx, at) { at = it }
                                         "完成" -> {
                                             val cents = (evalExpr(expr) * 100).roundToLong()
-                                            if (cents > 0) onSave(kind, cents, cat, acct, note, at)
+                                            if (cents > 0) onSave(kind, cents, cat, acctId, note, at)
                                             else toast(ctx, "先输金额")
                                         }
                                         "." -> {
@@ -1144,30 +1141,6 @@ fun AddScreen(
                 if (ri < rows4.size - 1) Spacer(Modifier.height(6.dp))
             }
         }
-    }
-
-    if (askAcct) {
-        AlertDialog(
-            onDismissRequest = { askAcct = false },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = { askAcct = false }) { Text("取消") } },
-            title = { Text("账户", fontSize = 15.sp) },
-            text = {
-                Column {
-                    prefs.accts.forEach { a ->
-                        Row(
-                            Modifier.fillMaxWidth().clickable { acct = a; askAcct = false }.padding(vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(a.name, fontSize = 14.sp)
-                            Spacer(Modifier.weight(1f))
-                            if (a.id == acct?.id) Icon(Icons.Filled.Check, null, tint = MiaoGold, modifier = Modifier.size(18.dp))
-                        }
-                    }
-                    if (prefs.accts.isEmpty()) Text("还没有账户，联网后会自动同步过来。", fontSize = 12.sp, color = MiaoDim)
-                }
-            },
-        )
     }
 
     if (askNote) {
@@ -1688,7 +1661,8 @@ fun AiScreen(
             return
         }
         val bookId = r.bookId ?: prefs.bookId.takeIf { it > 0 }
-        val acctId = r.acctId ?: prefs.lastAcctId.takeIf { it > 0 }
+        // 账户已砍：服务端返回的 account 字段一律不采用，只沿用本机上次用的那个（没有就留空）
+        val acctId = prefs.lastAcctId.takeIf { it > 0 }
         val uuid = db.newUuid()
         db.upsertLocal(
             Txn(
