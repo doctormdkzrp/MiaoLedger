@@ -12,6 +12,7 @@ import pytest
 
 # 必须在任何 app 模块被导入之前设置（conftest 先于测试模块加载）。
 os.environ["INVITE_CODE"] = "testcode"
+os.environ["RATE_LIMIT_PER_MIN"] = "0"  # 测试不打限流（限流有自己的用例）
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _PATTERNS = ("test_*.db", "test_*.db-journal", "test_*.db-wal", "test_*.db-shm")

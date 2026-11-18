@@ -34,10 +34,11 @@ from .common import (
     txn_payload,
 )
 from .db import SessionLocal, get_db, init_db
+from .guard import GuardMiddleware
 from .models import Account, Book, Category, Txn, User
 from .schemas import AccountIn, BookIn, CategoryIn, MeOut, PushIn, PushOut, TxnOut, TxnPatchIn
 
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 
 
 @asynccontextmanager
@@ -48,7 +49,20 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="小喵记账 API", version=APP_VERSION, lifespan=lifespan)
+# 生产环境默认不暴露 API 文档（/docs、/redoc、/openapi.json）——
+# 那三页等于把整张接口地图（含 /admin/*）送给扫描器。要临时看文档就设 ENABLE_DOCS=1。
+_DOCS = os.getenv("ENABLE_DOCS", "0") == "1"
+app = FastAPI(
+    title="小喵记账 API",
+    version=APP_VERSION,
+    lifespan=lifespan,
+    docs_url="/docs" if _DOCS else None,
+    redoc_url="/redoc" if _DOCS else None,
+    openapi_url="/openapi.json" if _DOCS else None,
+)
+
+# 轻量防护：单 IP 限流 + 请求体上限（见 app/guard.py）
+app.add_middleware(GuardMiddleware)
 
 # 管理台默认同源反代，无需额外配置；只有前后端分域部署时才配 CORS_ORIGINS
 _cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
