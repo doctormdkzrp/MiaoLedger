@@ -1,4 +1,4 @@
-"""首页落地页测试：根路径能开、带 APK 下载入口、不泄露接口细节。"""
+"""首页落地页测试：能开、有下载入口、不泄露个人信息与接口路径。"""
 import os
 import sys
 
@@ -27,5 +27,11 @@ def test_root_serves_landing_page(client):
     body = r.text
     assert "小喵记账" in body
     assert "/apk/" in body and ".apk" in body
-    # 不把接口地图漏在页面上
     assert "/api/v1/" not in body
+
+
+def test_landing_has_no_private_info(client):
+    body = client.get("/").text
+    # 公网页面上不能出现真实姓名，也不能把邀请码印出来
+    assert "张汝沛" not in body
+    assert "邀请码单独找管理员要" in body
